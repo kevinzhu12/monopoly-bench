@@ -35,12 +35,43 @@ tools = [
     },
 ]
 
-def get_llm_response(prompt: str, game_state) -> dict:
+decide_to_buy_tools = [
+    {
+        "type": "function",
+        "name": "buy_property",
+        "description": "Buy the property that the player is currently on.",
+        "parameters": {},
+    },
+    {
+        "type": "function",
+        "name": "skip_buy_property",
+        "description": "Skip buying the property that the player is currently on.",
+        "parameters": {},
+    }
+]
+
+decide_to_sell_tools = [
+    {
+        "type": "function",
+        "name": "sell_property",
+        "description": "Sell a property to the bank for half of its original cost.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "property_name": {"type": "string", "description": "The name of the property to sell."}
+            },
+            "required": ["property_name"],
+        },
+    },
+]
+
+def get_llm_response(prompt: str, game_state, tools) -> dict:
     """Gets a response from the language model.
 
     Args:
         prompt: The prompt to send to the language model.
         game_state: The current state of the game.
+        tools: The tools to use for the given prompt
 
     Returns:
         The response from the language model.

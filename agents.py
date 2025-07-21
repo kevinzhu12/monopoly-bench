@@ -1,7 +1,7 @@
 
 
 import random
-from apis import get_llm_response
+from apis import get_llm_response, decide_to_sell_tools, decide_to_buy_tools
 from engine import PropertyTile
 
 class BaseAgent:
@@ -100,19 +100,17 @@ class LLMAgent(BaseAgent):
         elif phase == "end_turn":
             return {"type": "end_turn"}
         
+        prompt = self._create_prompt(observation)
+        
         if phase == "decide_to_sell":
             if not observation["game_state"].players[self.player_id].owned_properties:
                 return {"type": "end_turn"}
-
-        prompt = self._create_prompt(observation)
-        print(prompt)
-        try:
-            response = get_llm_response(prompt, observation["game_state"])
+            response = get_llm_response(prompt, observation["game_state"], decide_to_sell_tools)
             return response
-        except Exception as e:
-            print(e)
-            # Fallback to random agent if LLM fails
-            return RandomAgent(self.player_id).act(observation)
+        
+        elif phase == "decide_to_buy":
+            response = get_llm_response(prompt, observation["game_state"], decide_to_buy_tools)
+            return response
 
     def _create_prompt(self, observation: dict) -> str:
         """Creates a prompt for the language model based on the current observation."""
