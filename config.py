@@ -45,7 +45,7 @@ tile_data = [
 ]
 # Agent configuration - LLM vs Random to test LLM advantage
 agents = [
-    GreedyBuyer(player_id=0),
+    LLMAgent(player_id=0),
     LLMAgent(player_id=1)
 ]
 

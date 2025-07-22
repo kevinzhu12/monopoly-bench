@@ -4,24 +4,28 @@ from config import tile_data, num_players, agents, starting_cash, max_turns
 def main():
     game_state = GameState(num_players, tile_data, max_turns, starting_cash)
 
-    phase = "roll"
     while not game_state.game_over:
         if not game_state.players:
             game_state.game_over = True
             continue
 
-        current_player_id = game_state.current_player_id
-        player = game_state.players[current_player_id]
-        agent = next(a for a in agents if a.player_id == current_player_id)
+        if game_state.decision_player_id is not None:
+            active_player_id = game_state.decision_player_id
+        else:
+            active_player_id = game_state.current_player_id
+        
+        player = game_state.players[active_player_id]
+        agent = next(a for a in agents if a.player_id == active_player_id)
 
-        if phase == "roll":
-            print(f"--- Turn {game_state.turn_number}: Player {current_player_id}'s turn ---")
-            owned_property_names = [p.name for p in game_state.board if p.owner == current_player_id]
-            print(f"Player {current_player_id} | Cash: ${player.cash} | Position: {player.position} | Properties: {owned_property_names if owned_property_names else 'None'}")
+        if game_state.phase == "start_management_phase":
+            print("\n\n")
+            print(f"--- TURN {game_state.turn_number}: PLAYER {active_player_id}'S TURN ---")
+            owned_property_names = [p.name for p in game_state.board if p.owner == active_player_id]
+            print(f"Player {active_player_id} | Cash: ${player.cash} | Position: {player.position} | Properties: {owned_property_names if owned_property_names else 'None'}")
 
         observation = {
             "game_state": game_state,
-            "phase": phase
+            "phase": game_state.phase
         }
 
         # Store state for logging
@@ -29,19 +33,22 @@ def main():
         position_before = player.position
         tile_at_position_before_action = game_state.board[player.position]
 
+        print(f"Phase before action: {game_state.phase}")
+
         action = agent.act(observation)
-        phase = step(game_state, action)
+        game_state.phase = step(game_state, action)
 
         # Find the player object again, as it might have been removed (bankruptcy)
-        player_after_action = game_state.players.get(current_player_id)
+        player_after_action = game_state.players.get(active_player_id)
         
         print(f"Action: {action['type']}")
+        print(f"Phase after action: {game_state.phase}")
 
         if action['type'] == 'roll':
             if player_after_action:
                 new_position = player_after_action.position
                 tile = game_state.board[new_position]
-                print(f"  Player {current_player_id} rolled and moved from position {position_before} to {new_position} (Landed on '{tile.name}')")
+                print(f"  Player {active_player_id} rolled and moved from position {position_before} to {new_position} (Landed on '{tile.name}')")
 
                 cash_after = player_after_action.cash
                 if cash_after < cash_before:
@@ -69,9 +76,10 @@ def main():
             print(f"  Ending turn.")
 
         if not player_after_action:
-             print(f"  Player {current_player_id} went bankrupt!")
+             print(f"  Player {active_player_id} went bankrupt!")
         
         print("-" * 40)
+
 
 
     print("Game Over!")
