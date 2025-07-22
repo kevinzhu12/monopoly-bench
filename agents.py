@@ -1,7 +1,7 @@
 
 
 import random
-from apis import get_llm_response, decide_to_sell_tools, decide_to_buy_tools
+from apis import get_llm_response, decide_to_sell_tools, decide_to_buy_tools, management_tools, trade_recipient_tools
 from engine import PropertyTile
 
 class BaseAgent:
@@ -26,14 +26,26 @@ class BaseAgent:
             A dictionary representing the action to be taken.
         """
         phase = observation["phase"]
-        if phase == "decide_to_buy":
+        if phase in ["start_management_phase", "end_management_phase"]:
+            return self.management_phase(observation)
+        elif phase == "decide_to_buy":
             return self.decide_to_buy(observation)
         elif phase == "decide_to_sell":
             return self.decide_to_sell(observation)
-        elif phase == "roll":
+        elif phase == "roll_phase":
             return {"type": "roll"}
+        elif phase == "decide_on_trade":
+            return self.decide_on_trade(observation)
         else:
             return {"type": "end_turn"}
+
+    def management_phase(self, observation: dict) -> dict:
+        """Decides on management actions like trading, building, or mortgaging."""
+        return {"type": "proceed"}
+
+    def decide_on_trade(self, observation: dict) -> dict:
+        """Decides whether to accept or reject a trade offer."""
+        return {"type": "reject_trade"}
 
     def decide_to_buy(self, observation: dict) -> dict:
         """Decides whether to buy a property.
@@ -76,6 +88,10 @@ class RandomAgent(BaseAgent):
         else:
             return {"type": "skip_buy"}
 
+    def decide_on_trade(self, observation: dict) -> dict:
+        # This will override BaseAgent's decide_on_trade
+        return {"type": "accept_trade" if self.random.choice([True, False]) else "reject_trade"}
+
 
 class GreedyBuyer(BaseAgent):
     """An agent that buys any unowned property it lands on."""
@@ -95,12 +111,13 @@ class LLMAgent(BaseAgent):
             A dictionary representing the action to be taken.
         """
         phase = observation["phase"]
-        if phase == "roll":
+        if phase == "roll_phase":
             return {"type": "roll"}
         elif phase == "end_turn":
             return {"type": "end_turn"}
         
         prompt = self._create_prompt(observation)
+        # print(prompt)
         
         if phase == "decide_to_sell":
             if not observation["game_state"].players[self.player_id].owned_properties:
@@ -111,16 +128,30 @@ class LLMAgent(BaseAgent):
         elif phase == "decide_to_buy":
             response = get_llm_response(prompt, observation["game_state"], decide_to_buy_tools)
             return response
+        
+        elif phase in ["start_management_phase", "end_management_phase"]:
+            response = get_llm_response(prompt, observation["game_state"], management_tools)
+            return response
+        
+        elif phase == "decide_on_trade":
+            response = get_llm_response(prompt, observation["game_state"], trade_recipient_tools)
+            return response
 
     def _create_prompt(self, observation: dict) -> str:
         """Creates a prompt for the language model based on the current observation."""
         game_state = observation["game_state"]
-        player_state = game_state.players[self.player_id]
         board_state = game_state.board
         phase = observation["phase"]
 
-        prompt = f"You are Player {self.player_id}. It is your turn and the phase is '{phase}'.\n\n"
-        prompt += "Here is the current state of the game:\n"
+        if phase == "decide_on_trade":
+            player_id = game_state.decision_player_id
+        else:
+            player_id = self.player_id
+
+        player_state = game_state.players[player_id]
+
+        prompt = f"You are Player {player_id}. It is your turn and the phase is '{phase}'.\n\n"
+        prompt += "Here is the current state of the Monopoly game:\n"
         prompt += f"- Turn: {game_state.turn_number}\n"
         prompt += f"- Current Player: {game_state.current_player_id}\n\n"
 
@@ -146,7 +177,7 @@ class LLMAgent(BaseAgent):
             "dark_blue": "Dark Blue"
         }
         
-        # Group properties by color set
+        # Group properties by color
         properties_by_color = {}
         for tile in board_state:
             if hasattr(tile, 'color_set'):
@@ -183,5 +214,18 @@ class LLMAgent(BaseAgent):
             owned_properties = [(board_state[p].name, f"${board_state[p].cost}") for p in player_state.owned_properties]
             prompt += f"You own the following properties: {owned_properties if owned_properties else 'None'}. "
             prompt += "Which property should you sell?"
+        
+        elif phase in ["start_management_phase", "end_management_phase"]:
+            prompt += "You are in the management phase. You can propose a trade, build houses, mortgage properties, or proceed to the next phase."
+        
+        elif phase == "decide_on_trade":
+            trade = game_state.pending_trade
+            from_player_id = trade['from_player']
+            offer_cash = trade['offer']['cash']
+            offer_properties = [board_state[p].name for p in trade['offer']['properties']]
+            request_cash = trade['request']['cash']
+            request_properties = [board_state[p].name for p in trade['request']['properties']]
+            prompt += f"Player {from_player_id} has proposed a trade. They are offering ${offer_cash} and the properties {offer_properties} in exchange for ${request_cash} and the properties {request_properties}. Do you accept or reject?"
 
         return prompt
+

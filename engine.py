@@ -72,6 +72,10 @@ class GameState:
         self.max_turns = max_turns
         self.player_order = list(range(num_players))
         self.current_player_index = 0
+        self.phase = "start_management_phase"
+        self.pending_trade = None
+        self.decision_player_id = None
+        self.pre_trade_phase = None
 
     def _create_board(self, tile_data):
         """Creates the game board from tile data."""
@@ -97,63 +101,79 @@ def step(game_state, action):
     current_player_id = game_state.current_player_id
     player = game_state.players[current_player_id]
 
-    if action["type"] == "roll":
+    action_type = action["type"]
+
+    if action_type == "proceed":
+        if game_state.phase == "start_management_phase":
+            game_state.phase = "roll_phase"
+        elif game_state.phase == "end_management_phase":
+            # End the current player's turn
+            game_state.current_player_index = (game_state.current_player_index + 1) % len(game_state.player_order)
+            if game_state.current_player_index == 0:
+                game_state.turn_number += 1
+            game_state.current_player_id = game_state.player_order[game_state.current_player_index]
+            if game_state.turn_number >= game_state.max_turns:
+                game_state.game_over = True
+            game_state.phase = "start_management_phase"
+
+    elif action_type == "roll":
         roll = random.randint(1, 6) + random.randint(1, 6)
         player.position = (player.position + roll) % len(game_state.board)
         tile = game_state.board[player.position]
 
         if isinstance(tile, PropertyTile) and tile.owner is None and tile.cost > 0:
-            return "decide_to_buy"
+            game_state.phase = "decide_to_buy"
         elif isinstance(tile, StreetTile) and tile.owner is not None and tile.owner != player.player_id:
             rent = tile.rent
-            # Check for monopoly
             color_set = tile.color_set
-            monopoly = True
-            for t in game_state.board:
-                if isinstance(t, StreetTile) and t.color_set == color_set and t.owner != tile.owner:
-                    monopoly = False
-                    break
+            monopoly = all(
+                t.owner == tile.owner for t in game_state.board if isinstance(t, StreetTile) and t.color_set == color_set
+            )
             if monopoly:
                 rent = tile.rent_monopoly
 
             if player.cash >= rent:
                 player.cash -= rent
                 game_state.players[tile.owner].cash += rent
+                game_state.phase = "end_management_phase"
             else:
                 amount_paid = player.cash
                 player.cash = 0
                 game_state.players[tile.owner].cash += amount_paid
                 player.debt = rent - amount_paid
-                return "decide_to_sell"
+                game_state.phase = "decide_to_sell"
         elif isinstance(tile, PropertyTile) and tile.owner is not None and tile.owner != player.player_id:
             rent = tile.rent
             if player.cash >= rent:
                 player.cash -= rent
                 game_state.players[tile.owner].cash += rent
+                game_state.phase = "end_management_phase"
             else:
                 amount_paid = player.cash
                 player.cash = 0
                 game_state.players[tile.owner].cash += amount_paid
                 player.debt = rent - amount_paid
-                return "decide_to_sell"
+                game_state.phase = "decide_to_sell"
         elif isinstance(tile, TaxTile):
             rent = tile.rent
             if player.cash >= rent:
                 player.cash -= rent
-        return "end_turn"
+            game_state.phase = "end_management_phase"
+        else:
+            game_state.phase = "end_management_phase"
 
-    elif action["type"] == "buy":
+    elif action_type == "buy":
         tile = game_state.board[player.position]
         if isinstance(tile, PropertyTile) and tile.owner is None and player.cash >= tile.cost:
             player.cash -= tile.cost
             tile.owner = player.player_id
             player.owned_properties.append(tile.tile_id)
-        return "end_turn"
+        game_state.phase = "end_management_phase"
 
-    elif action["type"] == "skip_buy":
-        return "end_turn"
+    elif action_type == "skip_buy":
+        game_state.phase = "end_management_phase"
 
-    elif action["type"] == "sell":
+    elif action_type == "sell":
         tile_to_sell = game_state.board[action["tile_id"]]
         player.cash += tile_to_sell.cost // 2
         tile_to_sell.owner = None
@@ -164,37 +184,70 @@ def step(game_state, action):
             owner_of_property = game_state.board[player.position].owner
             game_state.players[owner_of_property].cash += player.debt
             player.debt = 0
-            return "end_turn"
+            game_state.phase = "end_management_phase"
         else:
-            return "decide_to_sell"
+            game_state.phase = "decide_to_sell"
 
-    elif action["type"] == "end_turn":
+    elif action_type == "propose_trade":
+        game_state.pre_trade_phase = game_state.phase
+        game_state.pending_trade = {
+            "from_player": current_player_id,
+            "to_player": action["to_player"],
+            "offer": action["offer"],
+            "request": action["request"],
+        }
+        game_state.phase = "decide_on_trade"
+        game_state.decision_player_id = action["to_player"]
+
+    elif action_type == "accept_trade":
+        trade = game_state.pending_trade
+        from_player = game_state.players[trade["from_player"]]
+        to_player = game_state.players[trade["to_player"]]
+
+        from_player.cash -= trade["offer"]["cash"]
+        to_player.cash += trade["offer"]["cash"]
+        from_player.cash += trade["request"]["cash"]
+        to_player.cash -= trade["request"]["cash"]
+
+        for tile_id in trade["offer"]["properties"]:
+            from_player.owned_properties.remove(tile_id)
+            to_player.owned_properties.append(tile_id)
+            game_state.board[tile_id].owner = trade["to_player"]
+        for tile_id in trade["request"]["properties"]:
+            to_player.owned_properties.remove(tile_id)
+            from_player.owned_properties.append(tile_id)
+            game_state.board[tile_id].owner = trade["from_player"]
+
+        game_state.pending_trade = None
+        game_state.phase = game_state.pre_trade_phase
+        game_state.pre_trade_phase = None
+        game_state.decision_player_id = None
+
+    elif action_type == "reject_trade":
+        game_state.pending_trade = None
+        game_state.phase = game_state.pre_trade_phase
+        game_state.pre_trade_phase = None
+        game_state.decision_player_id = None
+
+    elif action_type == "end_turn":
         if player.debt > 0:
             player.cash = 0
             del game_state.players[current_player_id]
             game_state.player_order.remove(current_player_id)
-            
+
             if len(game_state.players) <= 1:
                 game_state.game_over = True
-                return "roll"
-            
+                return "game_over"
+
             if game_state.current_player_index >= len(game_state.player_order):
                 game_state.current_player_index = 0
                 game_state.turn_number += 1
-            
+
             game_state.current_player_id = game_state.player_order[game_state.current_player_index]
-            
+
             if game_state.turn_number >= game_state.max_turns:
                 game_state.game_over = True
-            
-            return "roll"
 
-        game_state.current_player_index = (game_state.current_player_index + 1) % len(game_state.player_order)
-        if game_state.current_player_index == 0:
-            game_state.turn_number += 1
-        game_state.current_player_id = game_state.player_order[game_state.current_player_index]
-        if game_state.turn_number >= game_state.max_turns:
-            game_state.game_over = True
-        return "roll"
+            game_state.phase = "start_management_phase"
 
-    return "roll"
+    return game_state.phase
