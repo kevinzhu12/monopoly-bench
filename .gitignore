@@ -11,3 +11,7 @@ wheels/
 
 # Environment variables
 .env
+
+# Results directory contains game logs - you may want to track some for analysis
+# Uncomment the line below if you want to ignore all log files:
+results/*.log
