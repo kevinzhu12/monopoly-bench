@@ -110,6 +110,26 @@ MASTER_TOOLS = {
             "required": ["property_name"],
         },
     },
+    "place_bid": {
+        "type": "function",
+        "name": "place_bid",
+        "description": "Place a bid on the property currently up for auction.",
+        "strict": True,
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "bid_amount": {"type": "integer", "description": "The amount of cash to bid."}
+            },
+            "required": ["bid_amount"],
+            "additionalProperties": False,
+        },
+    },
+    "pass_auction": {
+        "type": "function",
+        "name": "pass_auction",
+        "description": "Pass on the opportunity to bid in the current auction.",
+        "parameters": {},
+    },
 }
 
 def get_management_tools(buildable_properties=None):

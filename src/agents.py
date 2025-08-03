@@ -123,6 +123,8 @@ class LLMAgent(BaseAgent):
             return ["accept_trade", "reject_trade"]
         elif phase == "handle_mortgaged_trade":
             return ["resolve_mortgaged_trade"]
+        elif phase == "auction_phase":
+            return ["place_bid", "pass_auction"]
         elif phase == "end_turn":
             return ["end_turn"]
         return []
@@ -307,8 +309,13 @@ class LLMAgent(BaseAgent):
 
         if phase == "decide_to_buy":
             tile = board_state[player_state.position]
-            prompt += f"You landed on '{tile.name}' which is unowned and costs ${tile.cost}. "
-            prompt += "Would you like to buy it or skip?"
+            if hasattr(tile, 'cost'):
+                prompt += f"You landed on '{tile.name}' which is unowned and costs ${tile.cost}. "
+                prompt += "Would you like to buy it or skip? (YOU SHOULD SKIP)" # TODO: this is for testing, remove this line
+            else:
+                # This shouldn't happen - non-property tiles shouldn't trigger decide_to_buy phase
+                prompt += f"You landed on '{tile.name}'. This tile is not purchasable. "
+                prompt += "You should proceed to the next phase."
         
         elif phase == "decide_to_sell":
             prompt += f"You are in debt and need to raise cash. You can sell houses or mortgage properties.\n"
@@ -357,9 +364,9 @@ Consider your current situation:
 - Would it be better to save your cash for upcoming property purchases?
 
 Your options:
-1. PROPOSE A TRADE: Offer a mutually beneficial deal to complete monopolies or gain strategic properties. If you propose a trade, ensure that both players have the sufficient cash and properties to complete the trade. If you have already proposed a trade and it has been rejected, you should propose a better trade deal for the trade recipient or proceed to the next phase.
-2. BUILD HOUSES: If you own complete color sets, consider building to increase rent income. You MUST also have enough cash to build. Houses must be built evenly on a group of properties: e.g., a second house cannot be built on any property within a group until all of them have their first house.
-3. PROCEED: Move to the dice roll phase if no immediate strategic actions are needed
+1. PROCEED: Move to the dice roll phase if no immediate strategic actions are needed. You should generally default to this option UNLESS you have a great reason to do something else.
+2. PROPOSE A TRADE: Offer a mutually beneficial deal to complete monopolies or gain strategic properties. If you propose a trade, ensure that both players have the sufficient cash and properties to complete the trade. If you have already proposed a trade and it has been rejected, you should propose a better trade deal for the trade recipient or proceed to the next phase.
+3. BUILD HOUSES: If you own complete color sets, consider building to increase rent income. You MUST also have enough cash to build. Houses must be built evenly on a group of properties: e.g., a second house cannot be built on any property within a group until all of them have their first house.
 
 Strategic guidelines:
 - Completing monopolies is crucial - they allow building and charge much higher rent
@@ -395,36 +402,38 @@ The system will reject any invalid building attempts. Look at the "Properties yo
             prompt += f"Player {from_player_id} has proposed a trade. They are offering ${offer_cash} and the properties {offer_properties} in exchange for ${request_cash} and the properties {request_properties}.\n\n"
             
             # TODO: Remove the "YOU SHOULD ACCEPT THIS TRADE." line
-            prompt += """Consider this trade carefully:
-
-ACCEPT if the trade:
-- Helps you complete a monopoly (full color set) - this is usually the most valuable outcome
-- Gives you properties that prevent opponents from completing monopolies
-- Provides fair value exchange (consider property costs, rent potential, and strategic position)
-- Helps you gain a strategic advantage in the game
-
-REJECT if the trade:
-- Helps your opponent complete a monopoly more than it helps you
-- Gives away properties that are key to your own monopoly potential
-- Provides unfair value (you're giving significantly more than you're receiving)
-- Weakens your strategic position without clear benefit
-
-Key considerations:
-- Monopolies are the most powerful asset in Monopoly - they allow building and charge much higher rent
-- Properties that complete color sets are worth much more than their purchase price
-- Consider the long-term impact: will this trade help you or your opponent win?
-- Think about rent potential: developed monopolies generate massive income
-- Early properties (cheaper color sets) can be more valuable than expensive individual properties
-
-Do you accept or reject this trade?"""
-
-        elif phase == "handle_mortgaged_trade":
-            tile_id = game_state.mortgaged_properties_to_handle[0]
-            tile = game_state.board[tile_id]
-            prompt += f"You have received the mortgaged property '{tile.name}' in a trade. You must choose how to handle the mortgage.\n"
-            prompt += f"The mortgage value is ${tile.cost // 2}.\n"
-            prompt += f"You can either unmortgage it now for ${int((tile.cost // 2) * 1.1)}, or pay the 10% interest (${int((tile.cost // 2) * 0.1)}) and keep it mortgaged."
-
+            prompt += (
+                "Consider this trade carefully:\n\n"
+                "ACCEPT if the trade:\n"
+                "- Helps you complete a monopoly (full color set) - this is usually the most valuable outcome\n"
+                "- Gives you properties that prevent opponents from completing monopolies\n"
+                "- Provides fair value exchange (consider property costs, rent potential, and strategic position)\n"
+                "- Helps you gain a strategic advantage in the game\n\n"
+                "REJECT if the trade:\n"
+                "- Helps your opponent complete a monopoly more than it helps you\n"
+                "- Gives away properties that are key to your own monopoly potential\n"
+                "- Provides unfair value (you're giving significantly more than you're receiving)\n"
+                "- Weakens your strategic position without clear benefit\n\n"
+                "Key considerations:\n"
+                "- Monopolies are the most powerful asset in Monopoly - they allow building and charge much higher rent\n"
+                "- Properties that complete color sets are worth much more than their purchase price\n"
+                "- Consider the long-term impact: will this trade help you or your opponent win?\n"
+                "- Think about rent potential: developed monopolies generate massive income\n"
+                "- Early properties (cheaper color sets) can be more valuable than expensive individual properties\n\n"
+                "Do you accept or reject this trade?"
+            )
+            tile_id = game_state.mortgaged_properties_to_handle[0]            
+            tile = game_state.board[tile_id]            
+            prompt += f"You have received the mortgaged property '{tile.name}' in a trade. You must choose how to handle the mortgage.\n"            
+            prompt += f"The mortgage value is ${tile.cost // 2}.\n"            
+            prompt += f"You can either unmortgage it now for ${int((tile.cost // 2) * 1.1)}, or pay the 10% interest (${int((tile.cost // 2) * 0.1)}) and keep it mortgaged."        
+        elif phase == "auction_phase":            
+            auction_state = game_state.auction_state            
+            tile = game_state.board[auction_state["tile_id"]]            
+            prompt += f"An auction is being held for the property '{tile.name}'.\n"            
+            prompt += f"The current bid is ${auction_state['current_bid']}.\n"            
+            prompt += f"The active bidders are: {auction_state['active_bidders']}.\n"            
+            prompt += "You can either place a higher bid or pass. You should consider bidding if the property helps you complete a color set or if winning it would block another player from completing theirs. However, be cautious not to overbid—spending too much can leave you cash-poor and vulnerable, especially early in the game. If the property is not critical to your strategy or if the cost would leave you with little flexibility, it's often better to pass. Also consider whether passing would allow another player to cheaply complete a dangerous monopoly."        
         return prompt
 
     def _update_history(self, action: dict, observation: dict):

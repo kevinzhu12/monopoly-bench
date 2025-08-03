@@ -10,6 +10,7 @@ class GamePhase:
     DECIDE_TO_SELL = "decide_to_sell"
     DECIDE_ON_TRADE = "decide_on_trade"
     HANDLE_MORTGAGED_TRADE = "handle_mortgaged_trade"
+    AUCTION_PHASE = "auction_phase"
     END_TURN = "end_turn"
     GAME_OVER = "game_over"
 
@@ -93,6 +94,7 @@ class GameState:
         self.pre_trade_phase = None
         self.pre_mortgage_phase = None
         self.mortgaged_properties_to_handle = []
+        self.auction_state = None
         self.history = []
         self.MAX_HISTORY = 10
         self.trades_proposed_this_turn = 0
@@ -146,6 +148,10 @@ def step(game_state, action, logger=None):
         return handle_resolve_mortgaged_trade_action(game_state, action)
     elif action_type == "build_house":
         return handle_build_house_action(game_state, action, logger)
+    elif action_type == "place_bid":
+        return handle_auction_action(game_state, action, player)
+    elif action_type == "pass_auction":
+        return handle_auction_action(game_state, action, player)
     elif action_type == "end_turn":
         return handle_end_turn_action(game_state, player)
 
@@ -323,9 +329,17 @@ def handle_skip_buy_action(game_state):
         game_state: GameState object containing the game state
         
     Returns:
-        str: The next game phase ("end_management_phase")
+        str: The next game phase ("auction_phase")
     """
-    return GamePhase.END_MANAGEMENT
+    tile_to_auction = game_state.board[game_state.players[game_state.current_player_id].position]
+    game_state.auction_state = {
+        "tile_id": tile_to_auction.tile_id,
+        "current_bid": 0,
+        "high_bidder": None,
+        "active_bidders": list(game_state.players.keys()),
+        "last_bidder": None,
+    }
+    return GamePhase.AUCTION_PHASE
 
 def handle_mortgage_property_action(game_state, action, player):
     """Handle the mortgage property action.
@@ -673,3 +687,44 @@ def handle_roll_action(game_state, player):
         return GamePhase.END_MANAGEMENT
     else:
         return GamePhase.END_MANAGEMENT
+
+def handle_auction_action(game_state, action, player):
+    """Handle auction actions (place_bid and pass_auction)."""
+    auction_state = game_state.auction_state
+    action_type = action["type"]
+
+    if action_type == "place_bid":
+        bid_amount = action["bid_amount"]
+        if bid_amount > auction_state["current_bid"] and player.cash >= bid_amount:
+            auction_state["current_bid"] = bid_amount
+            auction_state["high_bidder"] = player.player_id
+            auction_state["last_bidder"] = player.player_id
+        else:
+            # Invalid bid, treat as a pass
+            auction_state["active_bidders"].remove(player.player_id)
+
+    elif action_type == "pass_auction":
+        auction_state["active_bidders"].remove(player.player_id)
+
+    if len(auction_state["active_bidders"]) == 1:
+        # Auction ends - only one bidder left
+        winner_id = auction_state.get("high_bidder")
+        if winner_id is not None:
+            winner = game_state.players[winner_id]
+            tile = game_state.board[auction_state["tile_id"]]
+            winner.cash -= auction_state["current_bid"]
+            tile.owner = winner_id
+            winner.owned_properties.append(tile.tile_id)
+        # If winner_id is None, no one bid and property remains unowned
+        game_state.auction_state = None
+        return GamePhase.END_MANAGEMENT
+    elif not auction_state["active_bidders"]:
+        # All players passed
+        game_state.auction_state = None
+        return GamePhase.END_MANAGEMENT
+    else:
+        # Continue auction
+        current_bidder_index = auction_state["active_bidders"].index(auction_state["last_bidder"])
+        next_bidder_index = (current_bidder_index + 1) % len(auction_state["active_bidders"])
+        game_state.decision_player_id = auction_state["active_bidders"][next_bidder_index]
+        return GamePhase.AUCTION_PHASE

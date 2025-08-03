@@ -8,6 +8,8 @@ load_dotenv()
 
 client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 model = "gpt-4o-mini-2024-07-18"
+# model = "o3-2025-04-16"
+# model = "o3-mini-2025-01-31"
 
 def get_llm_response(prompt: str, game_state, tool_names, logger=None) -> dict:
     """Gets a response from the language model.
@@ -24,7 +26,7 @@ def get_llm_response(prompt: str, game_state, tool_names, logger=None) -> dict:
     tools = [MASTER_TOOLS[tool_name] for tool_name in tool_names]
     response = client.responses.create(
         model=model,
-        instructions="You are a Monopoly player. Your goal is to win the game by making smart decisions.",
+        instructions="You are a Monopoly player. Your goal is to win the game by making smart decisions. Before taking any action, briefly explain your reasoning/strategy for the action you are taking.",
         input=prompt,
         tools=tools,
         tool_choice="required", 
@@ -35,8 +37,15 @@ def get_llm_response(prompt: str, game_state, tool_names, logger=None) -> dict:
         logger.log_api_response(str(response.output))
     else:
         print("RESPONSE", response.output)
+
+    tool_call = None
+    for item in response.output:
+        if hasattr(item, "name"):
+            tool_call = item
+            break
     
-    tool_call = response.output[0]
+    if tool_call is None:
+        raise ValueError("No tool call found in response")
 
     if tool_call.name == "buy_property":
         return buy_property()
@@ -97,6 +106,14 @@ def get_llm_response(prompt: str, game_state, tool_names, logger=None) -> dict:
                 tile_id = tile.tile_id
                 break
         return sell_house(tile_id)
+    elif tool_call.name == "place_bid":
+        args = json.loads(tool_call.arguments)
+        return place_bid(args["bid_amount"])
+    elif tool_call.name == "pass_auction":
+        return pass_auction()
+    else:
+        print(f"ERROR: Unknown tool call: {tool_call.name}")
+        return None
 
 def buy_property() -> dict:
     return {"type": "buy"}
@@ -137,3 +154,9 @@ def build_house(tile_id: int) -> dict:
 
 def sell_house(tile_id: int) -> dict:
     return {"type": "sell_house", "tile_id": tile_id}
+
+def place_bid(bid_amount: int) -> dict:
+    return {"type": "place_bid", "bid_amount": bid_amount}
+
+def pass_auction() -> dict:
+    return {"type": "pass_auction"}
