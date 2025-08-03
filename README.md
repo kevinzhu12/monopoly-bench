@@ -1,64 +1,104 @@
 # Monopoly Bench
 
-Monopoly Bench is a lightweight, text-based simulation of the classic board game Monopoly, designed for benchmarking and analyzing agent-based strategies. This platform allows developers and researchers to implement and test various playing strategies in a controlled and repeatable environment.
+Monopoly Bench is a lightweight, text-based simulation of the classic board game Monopoly, designed for benchmarking and analyzing agent-based strategies. This project allows LLMs to play Monopoly against each other, providing a controlled environment to test strategic decision-making capabilities.
 
-## Setup
+## Features
 
-To get started with Monopoly Bench, you will need Python 3. No external libraries are required, so you can run the simulation out of the box. Follow these steps to set up the project:
+- **LLM Agent Support**: Integrates with OpenAI API (GPT-4, o3, etc.) for AI players
+- **Condensed Board**: Optimized 19-tile board to reduce game length and API costs
+- **Multiple Agent Types**: Support for LLM agents, random agents, and custom strategies
+- **Detailed Logging**: Comprehensive game logs for analysis and debugging
+- **Auction System**: Full property auction mechanics when players skip purchases
+- **Trading & Building**: Complete property trading and house-building mechanics
 
-1.  **Clone the repository:**
+## Quick Start
 
-    ```bash
-    git clone https://github.com/your-username/monopoly-bench.git
-    cd monopoly-bench
-    ```
+1. **Setup Environment**
+   ```bash
+   # Install UV package manager
+   curl -LsSf https://astral.sh/uv/install.sh | sh
+   
+   # Clone and setup project
+   git clone <repository-url>
+   cd monopoly-bench
+   uv sync
+   ```
 
-2.  **Verify your Python version:**
+2. **Configure OpenAI API**
+   ```bash
+   # Create .env file with your API key
+   echo "OPENAI_API_KEY=your_api_key_here" > .env
+   ```
 
-    Ensure you have Python 3 installed on your system:
-
-    ```bash
-    python3 --version
-    ```
-
-    If you do not have Python 3, please install it from the official [Python website](https://www.python.org/downloads/).
-
-## Usage
-
-To run a Monopoly simulation, execute the `run_match.py` script from the root directory of the project:
-
-```bash
-python3 run_match.py
-```
-
-This will start a game with the default settings, which include two players with predefined agents: a `GreedyBuyer` and a `RandomAgent`. The simulation will run until one player goes bankrupt or the maximum number of turns is reached.
-
-The output will provide a detailed log of each turn, including player actions, cash, properties, and rent payments. At the end of the game, the final results will be displayed, showing the winner and their assets.
+3. **Run a Game**
+   ```bash
+   uv run src/run_match.py
+   ```
 
 ## Project Structure
 
-The project is organized into three main files:
+```
+monopoly-bench/
+├── src/
+│   ├── run_match.py    # Main game runner
+│   ├── engine.py       # Core game logic and rules
+│   ├── agents.py       # AI agent implementations
+│   ├── apis.py         # OpenAI API integration
+│   ├── tools.py        # LLM function definitions
+│   ├── config.py       # Game configuration
+│   └── logger.py       # Game logging utilities
+├── results/            # Game logs and results
+└── README.md
+```
 
--   `run_match.py`: This is the main script to run a Monopoly simulation. It initializes the game state, agents, and the game board. You can modify this file to customize the number of players, the agents used, and the board layout.
+## Configuration
 
--   `engine.py`: This file contains the core game logic, including the `GameState`, `Player`, and `Tile` classes. It manages the game state, player actions, and the rules of the game, such as moving players, buying and selling properties, and paying rent.
+Edit `src/config.py` to customize:
 
--   `agents.py`: This file defines the different agents that can play the game. By default, it includes:
-    -   `RandomAgent`: A baseline agent that makes random decisions.
-    -   `GreedyBuyer`: An agent that buys any unowned property it lands on.
+- **Agents**: Choose between LLM, Random, or custom agents
+- **Starting Cash**: Default $1000 (optimized for faster games)
+- **Max Turns**: Default 30 turns to prevent infinite games
+- **Board Layout**: Condensed 19-tile board with core Monopoly mechanics
 
-    You can create your own agents by extending the base `Agent` class and implementing the `act` method.
+## Game Mechanics
 
-## How to Add a New Agent
+The simulation includes core Monopoly features:
 
-To add a new agent, create a new class in `agents.py` that inherits from the base `Agent` class and implements the `act` method. The `act` method should take the current game state as input and return an action.
+- **Property Management**: Buy, mortgage, and trade properties
+- **House Building**: Build houses on monopolies for increased rent
+- **Auctions**: Properties go to auction when skipped
+- **Debt Resolution**: Automatic bankruptcy handling
+- **Strategic Trading**: LLM agents can propose and negotiate trades
 
-Once you have created your agent, you can add it to a simulation by modifying the `run_match.py` script to include your new agent in the `agents` list.
+## Example Output
 
-## Selling Properties
+```
+=== MONOPOLY GAME LOG ===
+--- TURN 1: PLAYER 0'S TURN ---
+Player 0 | Cash: $1000 | Position: 0 | Properties: None
+Phase: start_management_phase
+Action: proceed
+Player 0 rolled 8, moved to Baltic Avenue
+Bought Baltic Avenue for $60
+```
 
-When a player owes rent and does not have enough cash to cover the cost, they will enter a `decide_to_sell` phase. In this phase, the player can choose to sell one of their properties to the bank for half of its original cost. The agent will continue to sell properties until the debt is paid or they have no more properties to sell, at which point they will go bankrupt.
+## Development
 
-## Future Updates
+To add custom agents, extend the base `Agent` class in `agents.py`:
 
-This README will be updated to reflect any changes to the codebase, including new features, bug fixes, and improvements to the simulation engine.
+```python
+class CustomAgent(Agent):
+    def act(self, observation):
+        # Implement your strategy
+        return {"type": "proceed"}
+```
+
+## Requirements
+
+- Python 3.8+
+- OpenAI API key (for LLM agents)
+- UV package manager for dependencies
+
+## License
+
+MIT License - see LICENSE file for details.
