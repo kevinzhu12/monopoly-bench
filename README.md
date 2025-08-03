@@ -98,7 +98,3 @@ class CustomAgent(Agent):
 - Python 3.8+
 - OpenAI API key (for LLM agents)
 - UV package manager for dependencies
-
-## License
-
-MIT License - see LICENSE file for details.
